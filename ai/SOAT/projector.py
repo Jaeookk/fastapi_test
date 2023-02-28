@@ -18,7 +18,7 @@ from op import fused_leaky_relu
 from util import *
 
 
-def gaussian_loss(v):
+def gaussian_loss(v,gt_mean, gt_cov_inv):
     # [B, 9088]
     loss = (v - gt_mean) @ gt_cov_inv @ (v - gt_mean).transpose(1, 0)
     return loss.mean()
@@ -163,10 +163,10 @@ def get_model():
     percept = lpips.LPIPS(net="vgg", spatial=True).to(device)
     latent_in.requires_grad = True
 
-    return (latent_in, g_ema, percept)
+    return latent_in, g_ema, percept, ,gt_mean, gt_cov, gt_cov_inv
 
 
-def make_inversion(image_bytes):
+def make_inversion(image_bytes, gt_mean, gt_cov, gt_cov_inv):
     device = "cuda"
     n_mean_latent = 10000
     resize = 256
@@ -209,7 +209,7 @@ def make_inversion(image_bytes):
 
         p_loss = 20 * percept(img_gen, imgs).mean()
         mse_loss = 1 * F.mse_loss(img_gen, imgs)
-        g_loss = 1e-3 * gaussian_loss(latent_n)
+        g_loss = 1e-3 * gaussian_loss(latent_n,gt_mean, gt_cov_inv)
 
         loss = p_loss + mse_loss + g_loss
 
