@@ -2,23 +2,43 @@ import io
 import math
 import os
 import cv2
+import PIL
+import base64
 
 import lpips
 import torch
 import torch.nn as nn
 import numpy as np
 
+from ast import Bytes
 from torch import optim
 from torch.nn import functional as F
 from torchvision import transforms
 from PIL import Image
 from tqdm import tqdm
 from .model import Generator
-from op import fused_leaky_relu
-from util import *
+
+from .op import fused_leaky_relu
+from .util import *
 
 
-def gaussian_loss(v,gt_mean, gt_cov_inv):
+def from_image_to_bytes(img: PIL.Image) -> Bytes:
+    """
+    pillow image 객체를 bytes로 변환
+    """
+    # Pillow 이미지 객체를 Bytes로 변환
+    imgByteArr = io.BytesIO()  # <class '_io.BytesIO'>
+    img.save(imgByteArr, format="jpeg")  # PIL 이미지를 binary형태의 이름으로 저장
+    imgByteArr = imgByteArr.getvalue()  # <class 'bytes'>
+    # Base64로 Bytes를 인코딩
+    encoded = base64.b64encode(imgByteArr)  # <class 'bytes'>
+    # Base64로 ascii로 디코딩
+    decoded = encoded.decode("ascii")  # <class 'str'>
+
+    return decoded
+
+
+def gaussian_loss(v, gt_mean, gt_cov_inv):
     # [B, 9088]
     loss = (v - gt_mean) @ gt_cov_inv @ (v - gt_mean).transpose(1, 0)
     return loss.mean()
@@ -118,7 +138,7 @@ def detectFace(img, mode="loose"):
         raise Exception("No face is found")
 
 
-def _transform_image(image):
+def transform_image(image):
     transform = transforms.Compose(
         [
             transforms.Resize(256),
@@ -127,14 +147,17 @@ def _transform_image(image):
             transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
         ]
     )
-    return transform(Image.fromarray(image[:, :, ::-1]))
+    return transform(Image.fromarray(image))
 
 
-def get_model():
-    device = "cuda"
+def get_inversion_model():
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:1024"
+    # OOM을 방지하기 위함. 원래는 max_split_size_mb가 INF 값인거같음.
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     g_ema = Generator(256, 512, 8)
-    ensure_checkpoint_exists(".ai/SOAT/face.pt")
-    g_ema.load_state_dict(torch.load(".ai/SOAT/face.pt")["g_ema"], strict=False)
+    ensure_checkpoint_exists("ai/SOAT/face.pt")
+    g_ema.load_state_dict(torch.load("ai/SOAT/face.pt")["g_ema"], strict=False)
     g_ema = g_ema.to(device).eval()
 
     with torch.no_grad():
@@ -142,7 +165,7 @@ def get_model():
         latent_in = list2style(latent_mean)
 
     # get gaussian stats
-    if not os.path.isfile(".ai/SOAT/inversion_stats.npz"):
+    if not os.path.isfile("ai/SOAT/inversion_stats.npz"):
         with torch.no_grad():
             source = list2style(g_ema.get_latent(torch.randn([10000, 512]).cuda())).cpu().numpy()
             gt_mean = source.mean(0)
@@ -152,7 +175,7 @@ def get_model():
         # An extension from this work https://arxiv.org/abs/2009.06529
         np.savez("inversion_stats.npz", mean=gt_mean, cov=gt_cov)
 
-    data = np.load(".ai/SOAT/inversion_stats.npz")
+    data = np.load("ai/SOAT/inversion_stats.npz")
     gt_mean = torch.tensor(data["mean"]).cuda().view(1, -1).float()
     gt_cov_inv = torch.tensor(data["cov"]).cuda()
 
@@ -162,12 +185,12 @@ def get_model():
 
     percept = lpips.LPIPS(net="vgg", spatial=True).to(device)
     latent_in.requires_grad = True
+    print(torch.cuda.memory_allocated() / 1024 / 1024)
+    return latent_in, g_ema, percept, gt_mean, gt_cov_inv
 
-    return latent_in, g_ema, percept, ,gt_mean, gt_cov, gt_cov_inv
 
-
-def make_inversion(image_bytes, gt_mean, gt_cov, gt_cov_inv):
-    device = "cuda"
+def make_inversion(image_bytes, latent_in, g_ema, percept, gt_mean, gt_cov_inv):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     n_mean_latent = 10000
     resize = 256
 
@@ -181,11 +204,9 @@ def make_inversion(image_bytes, gt_mean, gt_cov, gt_cov_inv):
     except Exception as e:
         print(f"An error occurred in the detectFace function.\n{e} in imgfile")
         exit()
-    imgs.append(_transform_image(face))
+    imgs.append(transform_image(face))
 
     imgs = torch.stack(imgs, 0).to(device)
-
-    latent_in, g_ema, percept = get_model()
 
     optimizer = optim.Adam([latent_in], lr=0.5, betas=(0.9, 0.999))
 
@@ -209,7 +230,7 @@ def make_inversion(image_bytes, gt_mean, gt_cov, gt_cov_inv):
 
         p_loss = 20 * percept(img_gen, imgs).mean()
         mse_loss = 1 * F.mse_loss(img_gen, imgs)
-        g_loss = 1e-3 * gaussian_loss(latent_n,gt_mean, gt_cov_inv)
+        g_loss = 1e-3 * gaussian_loss(latent_n, gt_mean, gt_cov_inv)
 
         loss = p_loss + mse_loss + g_loss
 
@@ -235,18 +256,18 @@ def make_inversion(image_bytes, gt_mean, gt_cov, gt_cov_inv):
             )
         )
 
-    img_gen, _ = g_ema(style2list(min_latent))
-
     # save_name = os.path.splitext(os.path.basename(args.files[0]))[0]
     # filename = f"{out_dir}/{save_name}.pt"
 
-    img_ar = make_image(img_gen)
+    # torch.save({"latent": min_latent}, filename)  # save weights(min_latent)
 
-    # for i, input_name in enumerate(args.files):
-    #     result_file["latent"] = latent_in[i]
+    img_gen, _ = g_ema(style2list(min_latent))  # min_latent로 이미지 생성
 
-    torch.save({"latent": min_latent}, filename)  # save weights
-
-    img_ar = Image.fromarray(img_ar[0])
+    img_ar = make_image(img_gen)  # tensor => numpy image
+    img_ar = Image.fromarray(img_ar[0])  # numpy => PIL image
+    img_ar_bytes = from_image_to_bytes(img_ar)
     # img_ar.save(f"./inversion_imgs/{save_name}.jpg")
-    return
+
+    # img_ar = Image.fromarray(face)
+    # img_ar_bytes = from_image_to_bytes(img_ar)
+    return img_ar_bytes

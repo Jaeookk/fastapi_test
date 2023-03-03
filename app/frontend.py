@@ -1,5 +1,6 @@
 import io
 import os
+import base64
 from pathlib import Path
 
 import requests
@@ -18,7 +19,7 @@ import streamlit as st
 
 
 def main():
-    st.title("Mask Classification Model")
+    st.title("Inversion Model")
     uploaded_file = st.file_uploader("Choose an image", type=["jpg", "jpeg", "png"])
 
     if uploaded_file:
@@ -26,15 +27,17 @@ def main():
         image = Image.open(io.BytesIO(image_bytes))
 
         st.image(image, caption="Uploaded Image")
-        st.write("Classifying...")
+        st.write("Inversion...")
 
         # 기존 stremalit 코드
         # _, y_hat = get_prediction(model, image_bytes)
         # label = config['classes'][y_hat.item()]
         files = [("files", (uploaded_file.name, image_bytes, uploaded_file.type))]
-        response = requests.post("http://localhost:8000/order", files=files)
-        label = response.json()["products"][0]["result"]
-        st.write(f"label is {label}")
+        response = requests.post("http://localhost:8000/inversion", files=files)
+        img_ar = response.json()["result"]
+        # ASCII코드로 변환된 bytes 데이터(str) -> bytes로 변환 -> 이미지로 디코딩
+        img_ar = Image.open(io.BytesIO(base64.b64decode(img_ar)))
+        st.image(img_ar)
 
 
 main()

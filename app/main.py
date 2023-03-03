@@ -1,3 +1,5 @@
+import sys
+import os
 from db_conn import engineconn
 from db_class import Test
 from fastapi import FastAPI, UploadFile, File
@@ -9,6 +11,9 @@ from typing import List, Union, Optional, Dict, Any
 from datetime import datetime
 
 from model import MyEfficientNet, get_model, get_config, predict_from_image_byte
+
+sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
+from ai.SOAT.projector import *
 
 app = FastAPI()
 
@@ -104,6 +109,25 @@ async def make_order(
     new_order = Order(products=products)
     orders.append(new_order)
     return new_order
+
+
+class InversionImage(BaseModel):
+    result: Optional[str]
+    # pydantic custom class 허용
+    class Config:
+        arbitrary_types_allowed = True
+
+
+@app.post("/inversion", description="inversion 테스트")
+async def make_projector(files: List[UploadFile] = File(...), model=Depends(get_inversion_model)):
+    latent_in, g_ema, percept, gt_mean, gt_cov_inv = model
+    for file in files:
+        image_bytes = await file.read()
+        inversion_result = make_inversion(
+            image_bytes, latent_in, g_ema, percept, gt_mean, gt_cov_inv
+        )  # output 형태를 정해야함...
+        product = InversionImage(result=inversion_result)
+    return product
 
 
 class OrderUpdate(BaseModel):
