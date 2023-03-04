@@ -1,3 +1,4 @@
+import gc
 import sys
 import os
 from db_conn import engineconn
@@ -14,6 +15,11 @@ from model import MyEfficientNet, get_model, get_config, predict_from_image_byte
 
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 from ai.SOAT.projector import *
+from ai.SOAT.toonify import *
+
+
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128"
+# OOM을 방지하기 위함. 원래는 max_split_size_mb가 INF 값인거같음.
 
 app = FastAPI()
 
@@ -29,7 +35,6 @@ class Product(BaseModel):
     # Field : 모델 스키마 또는 복잡한 Validation 검사를 위해 필드에 대한 추가 정보를 제공할 때 사용
     # default_factory : Product Class가 처음 만들어질 때 호출되는 함수를 uuid4로 하겠다. -> Product 클래스를 생성하면 uuid4를 만들어서 id에 저장.
     name: str
-    price: float
 
 
 class Order(BaseModel):
@@ -83,51 +88,49 @@ async def get_order_by_id(order_id: UUID) -> Optional[Order]:
     # next는 이터레이터에서 값을 차례대로 꺼냄
 
 
-class InferenceImageProduct(Product):
-    name: str = "inference_image_product"
-    price: float = 100.0
-    result: Optional[List]
-
-
-@app.post("/order", description="주문을 요청합니다")
-async def make_order(
-    files: List[UploadFile] = File(...),
-    model: MyEfficientNet = Depends(get_model),
-    config: Dict[str, Any] = Depends(get_config),
-):
-    # Depends : 의존성 주입
-    # 반복적이고 공통적인 로직이 필요할 때 사용
-    # 모델을 Load, Config Load
-    products = []
-    for file in files:
-        image_bytes = await file.read()
-        inference_result = predict_from_image_byte(model=model, image_bytes=image_bytes, config=config)
-        # InferenceImageProduct Class 생성해서 product로 정의
-        product = InferenceImageProduct(result=inference_result)
-        products.append(product)
-
-    new_order = Order(products=products)
-    orders.append(new_order)
-    return new_order
-
-
-class InversionImage(BaseModel):
-    result: Optional[str]
-    # pydantic custom class 허용
-    class Config:
-        arbitrary_types_allowed = True
+class InversionImage(Product):
+    name: str = "Inversion_image"
+    # result: Optional[List[str]]
+    img_result: Optional[str]
+    weights: Optional[List]
 
 
 @app.post("/inversion", description="inversion 테스트")
 async def make_projector(files: List[UploadFile] = File(...), model=Depends(get_inversion_model)):
     latent_in, g_ema, percept, gt_mean, gt_cov_inv = model
+    products = []
     for file in files:
         image_bytes = await file.read()
-        inversion_result = make_inversion(
+        img_result, weights = make_inversion(
             image_bytes, latent_in, g_ema, percept, gt_mean, gt_cov_inv
-        )  # output 형태를 정해야함...
-        product = InversionImage(result=inversion_result)
-    return product
+        )  # output 형태를 정해야함....
+        product = InversionImage(img_result=img_result, weights=weights)
+        products.append(product)
+    new_order = Order(products=products)
+    orders.append(new_order)
+    print(orders)
+    print(len(orders))
+    gc.collect()
+    torch.cuda.empty_cache()
+    return new_order
+
+
+class Toonified_Image(Product):
+    name: str = "Toonified_image"
+    # result: Optional[List[str]]
+    result: Optional[str]
+
+
+@app.post("/toonify", description="toonify 테스트")
+async def toonification():
+    products = []
+    min_latent = orders[-1].products[0].weights
+    latent_real, latent_toon, generator1, generator2, alpha, num_swap, early_alpha = make_toonification(min_latent)
+    product = toonify(latent_real, latent_toon, generator1, generator2, alpha, num_swap, early_alpha)
+    products.append(product)
+    new_order = Order(products=products)
+    orders.append(new_order)
+    return new_order
 
 
 class OrderUpdate(BaseModel):
@@ -154,14 +157,6 @@ async def update_order(order_id: UUID, order_update: OrderUpdate):
     if not updated_order:
         return {"message": "주문 정보를 찾을 수 없습니다."}
     return updated_order
-
-
-@app.get("/bill/{order_id}", description="계산을 요청합니다")
-async def get_bill(order_id: UUID):
-    found_order = get_order_by_id(order_id=order_id)
-    if not found_order:
-        return {"message": "주문 정보를 찾을 수 없습니다."}
-    return found_order.bill
 
 
 # TODO: 주문 구현, 상품 구현, 결제 구현
@@ -201,3 +196,37 @@ async def get_bill(order_id: UUID):
 # async def first_get():
 #     example = session.query(Test).all()
 #     return example
+
+# class InferenceImageProduct(Product):
+#     name: str = "inference_image_product"
+#     price: float = 100.0
+#     result: Optional[List]
+
+
+# @app.post("/order", description="주문을 요청합니다")
+# async def make_order(
+#     files: List[UploadFile] = File(...),
+#     model: MyEfficientNet = Depends(get_model),
+#     config: Dict[str, Any] = Depends(get_config),
+# ):
+#     # Depends : 의존성 주입
+#     # 반복적이고 공통적인 로직이 필요할 때 사용
+#     # 모델을 Load, Config Load
+#     products = []
+#     for file in files:
+#         image_bytes = await file.read()
+#         inference_result = predict_from_image_byte(model=model, image_bytes=image_bytes, config=config)
+#         # InferenceImageProduct Class 생성해서 product로 정의
+#         product = InferenceImageProduct(result=inference_result)
+#         products.append(product)
+
+#     new_order = Order(products=products)
+#     orders.append(new_order)
+#     return new_order
+
+# @app.get("/bill/{order_id}", description="계산을 요청합니다")
+# async def get_bill(order_id: UUID):
+#     found_order = get_order_by_id(order_id=order_id)
+#     if not found_order:
+#         return {"message": "주문 정보를 찾을 수 없습니다."}
+#     return found_order.bill

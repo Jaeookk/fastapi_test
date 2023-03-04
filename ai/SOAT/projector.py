@@ -2,15 +2,13 @@ import io
 import math
 import os
 import cv2
-import PIL
-import base64
+import time
 
 import lpips
 import torch
 import torch.nn as nn
 import numpy as np
 
-from ast import Bytes
 from torch import optim
 from torch.nn import functional as F
 from torchvision import transforms
@@ -20,22 +18,6 @@ from .model import Generator
 
 from .op import fused_leaky_relu
 from .util import *
-
-
-def from_image_to_bytes(img: PIL.Image) -> Bytes:
-    """
-    pillow image 객체를 bytes로 변환
-    """
-    # Pillow 이미지 객체를 Bytes로 변환
-    imgByteArr = io.BytesIO()  # <class '_io.BytesIO'>
-    img.save(imgByteArr, format="jpeg")  # PIL 이미지를 binary형태의 이름으로 저장
-    imgByteArr = imgByteArr.getvalue()  # <class 'bytes'>
-    # Base64로 Bytes를 인코딩
-    encoded = base64.b64encode(imgByteArr)  # <class 'bytes'>
-    # Base64로 ascii로 디코딩
-    decoded = encoded.decode("ascii")  # <class 'str'>
-
-    return decoded
 
 
 def gaussian_loss(v, gt_mean, gt_cov_inv):
@@ -151,8 +133,8 @@ def transform_image(image):
 
 
 def get_inversion_model():
-    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:1024"
-    # OOM을 방지하기 위함. 원래는 max_split_size_mb가 INF 값인거같음.
+    start_time = time.time()
+    print("Start get_inversion_model function")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     g_ema = Generator(256, 512, 8)
@@ -186,11 +168,13 @@ def get_inversion_model():
     percept = lpips.LPIPS(net="vgg", spatial=True).to(device)
     latent_in.requires_grad = True
     print(torch.cuda.memory_allocated() / 1024 / 1024)
+    print(time.time() - start_time)
     return latent_in, g_ema, percept, gt_mean, gt_cov_inv
 
 
 def make_inversion(image_bytes, latent_in, g_ema, percept, gt_mean, gt_cov_inv):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    step = 10  # default : 3000
     n_mean_latent = 10000
     resize = 256
 
@@ -211,7 +195,7 @@ def make_inversion(image_bytes, latent_in, g_ema, percept, gt_mean, gt_cov_inv):
     optimizer = optim.Adam([latent_in], lr=0.5, betas=(0.9, 0.999))
 
     min_loss = 100
-    pbar = tqdm(range(3000))
+    pbar = tqdm(range(step))
     latent_path = []
 
     lr = 0.5
@@ -270,4 +254,7 @@ def make_inversion(image_bytes, latent_in, g_ema, percept, gt_mean, gt_cov_inv):
 
     # img_ar = Image.fromarray(face)
     # img_ar_bytes = from_image_to_bytes(img_ar)
-    return img_ar_bytes
+    # print(min_latent)
+    # print(min_latent.size())
+    min_latent = min_latent.detach().to("cpu").numpy().tolist()
+    return img_ar_bytes, min_latent

@@ -34,10 +34,15 @@ def main():
         # label = config['classes'][y_hat.item()]
         files = [("files", (uploaded_file.name, image_bytes, uploaded_file.type))]
         response = requests.post("http://localhost:8000/inversion", files=files)
-        img_ar = response.json()["result"]
+        img_ar = response.json()["products"][0]["img_result"]
         # ASCII코드로 변환된 bytes 데이터(str) -> bytes로 변환 -> 이미지로 디코딩
         img_ar = Image.open(io.BytesIO(base64.b64decode(img_ar)))
         st.image(img_ar)
+
+        response = requests.post("http://localhost:8000/toonify")
+        toon_result = response.json()["products"][0]["result"]
+        toon_result = Image.open(io.BytesIO(base64.b64decode(toon_result)))
+        st.image(toon_result)
 
 
 main()
