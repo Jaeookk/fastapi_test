@@ -1,5 +1,6 @@
 import os
 import torch
+import time
 import argparse
 import numpy as np
 
@@ -9,6 +10,8 @@ from .util import *
 
 
 def toonify(latent1, latent2, generator1, generator2, alpha, num_swap, early_alpha):
+    print("Start Toonification")
+    start_time = time.time()
     with torch.no_grad():
         noise1 = [getattr(generator1.noises, f"noise_{i}") for i in range(generator1.num_layers)]
         noise2 = [getattr(generator2.noises, f"noise_{i}") for i in range(generator2.num_layers)]
@@ -57,6 +60,7 @@ def toonify(latent1, latent2, generator1, generator2, alpha, num_swap, early_alp
             skip = (1 - conv_alpha) * skip1 + conv_alpha * skip2
 
             i += 1
+    print(time.time() - start_time)
 
     image = skip.clamp(-1, 1)
 
@@ -75,9 +79,11 @@ def toonify(latent1, latent2, generator1, generator2, alpha, num_swap, early_alp
 
 
 def make_toonification(min_latent, disney_seed=686868, num_swap=7, alpha=0.4, early_alpha=0):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = "cpu"
 
     min_latent = torch.from_numpy(np.array(min_latent)).float().to(device)
+    print(f"toonify : {min_latent}")
 
     generator1 = Generator(256, 512, 8, channel_multiplier=2).eval().to(device)
     generator2 = Generator(256, 512, 8, channel_multiplier=2).to(device).eval()
