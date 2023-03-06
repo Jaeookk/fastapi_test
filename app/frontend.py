@@ -40,7 +40,7 @@ def main():
         st.image(img_ar)
 
         response = requests.post("http://localhost:8000/toonify")
-        toon_result = response.json()["products"][0]["img_result"]
+        toon_result = response.json()["products"][0]["result"]
         toon_result = Image.open(io.BytesIO(base64.b64decode(toon_result)))
         st.image(toon_result)
 

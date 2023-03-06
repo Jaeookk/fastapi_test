@@ -17,9 +17,9 @@ sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 from ai.SOAT.projector import *
 from ai.SOAT.toonify import *
 
-
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128"
 # OOM을 방지하기 위함. 원래는 max_split_size_mb가 INF 값인거같음.
+
 
 app = FastAPI()
 
@@ -79,13 +79,15 @@ async def get_order(order_id: UUID) -> Union[Order, dict]:
 
 
 async def get_order_by_id(order_id: UUID) -> Optional[Order]:
+    """
+    제네레이터
+    iter, next 키워드로 검색
+    제네레이터를 사용한 이유 : 메모리를 더 절약해서 사용할 수 있음
+    이터레이터, 이터러블, 제네레이터 => 파이썬 면접에서 많이 나오는 소재, GIL도 많이 나옴
+    iter는 반복 가능한 개체에서 이터레이터를 반환
+    next는 이터레이터에서 값을 차례대로 꺼냄
+    """
     return next((order for order in orders if order.id == order_id), None)
-    # 제네레이터
-    # iter, next 키워드로 검색
-    # 제네레이터를 사용한 이유 : 메모리를 더 절약해서 사용할 수 있음
-    # 이터레이터, 이터러블, 제네레이터 => 파이썬 면접에서 많이 나오는 소재, GIL도 많이 나옴
-    # iter는 반복 가능한 개체에서 이터레이터를 반환
-    # next는 이터레이터에서 값을 차례대로 꺼냄
 
 
 class InversionImage(Product):
@@ -101,9 +103,7 @@ async def make_projector(files: List[UploadFile] = File(...), model=Depends(get_
     products = []
     for file in files:
         image_bytes = await file.read()
-        img_result, weights = make_inversion(
-            image_bytes, latent_in, g_ema, percept, gt_mean, gt_cov_inv
-        )  # output 형태를 정해야함....
+        img_result, weights = make_inversion(image_bytes, latent_in, g_ema, percept, gt_mean, gt_cov_inv)
         product = InversionImage(img_result=img_result, weights=weights)
         products.append(product)
     new_order = Order(products=products)
@@ -126,7 +126,7 @@ async def toonification():
     products = []
     min_latent = orders[-1].products[0].weights
     toonify_result = make_toonification(min_latent)
-    product = InversionImage(img_result=toonify_result)
+    product = Toonified_Image(result=toonify_result)
     products.append(product)
     new_order = Order(products=products)
     orders.append(new_order)
