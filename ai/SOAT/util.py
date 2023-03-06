@@ -174,6 +174,20 @@ def display_image(image, size=None, mode="nearest", unnorm=False, title=""):
     plt.imshow(image)
 
 
+def make_image(tensor):
+    return (
+        tensor.detach()
+        .clamp_(min=-1, max=1)
+        .add(1)
+        .div_(2)
+        .mul(255)
+        .type(torch.uint8)
+        .permute(0, 2, 3, 1)
+        .to("cpu")
+        .numpy()
+    )
+
+
 def tensor2image(image, size=None, mode="nearest", unnorm=False, title=""):
     # image is [3,h,w] or [1,3,h,w] tensor [0,1]
     if image.is_cuda:

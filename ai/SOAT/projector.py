@@ -70,20 +70,6 @@ def latent_noise(latent, strength):
     return latent + noise
 
 
-def make_image(tensor):
-    return (
-        tensor.detach()
-        .clamp_(min=-1, max=1)
-        .add(1)
-        .div_(2)
-        .mul(255)
-        .type(torch.uint8)
-        .permute(0, 2, 3, 1)
-        .to("cpu")
-        .numpy()
-    )
-
-
 def detectFace(img, mode="loose"):
     face_detector = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_alt.xml")
     faces = face_detector.detectMultiScale(img, 1.3, 5)
@@ -257,4 +243,5 @@ def make_inversion(image_bytes, latent_in, g_ema, percept, gt_mean, gt_cov_inv):
     # print(min_latent)
     # print(min_latent.size())
     min_latent = min_latent.detach().to("cpu").numpy().tolist()
+    
     return img_ar_bytes, min_latent

@@ -63,19 +63,7 @@ def toonify(latent1, latent2, generator1, generator2, alpha, num_swap, early_alp
     print(time.time() - start_time)
 
     image = skip.clamp(-1, 1)
-
-    if image.is_cuda:
-        image = image.cpu()
-    if image.dim() == 4:
-        image = image[0]
-    # tensor 로 변환된 이미지는 [C,H,W] 형태를 가지고 있으니 opencv나 plt로 보이게 하려면 numpy형태[H,W,C]로 바꾸어야한다.
-    image = ((image.clamp(-1, 1) + 1) / 2).permute(1, 2, 0).detach().numpy()
-
-    # # PIL 은 [W,H,C]
-    image = Image.fromarray((image * 255.0).astype(np.uint8))
-    image_bytes = from_image_to_bytes(image)
-
-    return image_bytes
+    return image
 
 
 def make_toonification(min_latent, disney_seed=686868, num_swap=7, alpha=0.4, early_alpha=0):
@@ -88,7 +76,7 @@ def make_toonification(min_latent, disney_seed=686868, num_swap=7, alpha=0.4, ea
     generator1 = Generator(256, 512, 8, channel_multiplier=2).eval().to(device)
     generator2 = Generator(256, 512, 8, channel_multiplier=2).to(device).eval()
 
-    # mean_latent1 = load_model(generator1, "ai/SOAT/face.pt")
+    mean_latent1 = load_model(generator1, "ai/SOAT/face.pt")
     mean_latent2 = load_model(generator2, "ai/SOAT/disney.pt")
 
     truncation = 0.5
@@ -109,7 +97,7 @@ def make_toonification(min_latent, disney_seed=686868, num_swap=7, alpha=0.4, ea
 
     # source_im, _ = generator1(latent_real)
 
-    # result = toonify(latent_real, latent2)
+    result = toonify(latent_real, latent_toon, generator1, generator2, alpha, num_swap, early_alpha)
 
     # if result.is_cuda:
     #     result = result.cpu()
@@ -118,16 +106,9 @@ def make_toonification(min_latent, disney_seed=686868, num_swap=7, alpha=0.4, ea
     # # tensor 로 변환된 이미지는 [C,H,W] 형태를 가지고 있으니 opencv나 plt로 보이게 하려면 numpy형태[H,W,C]로 바꾸어야한다.
     # result = ((result.clamp(-1, 1) + 1) / 2).permute(1, 2, 0).detach().numpy()
 
-    # # # PIL 은 [W,H,C]
-    # result = Image.fromarray((result * 255.0).astype(np.uint8))
-    # result_bytes = from_image_to_bytes(result)
-    # # output_path = f"{out_dir}/{os.path.splitext(os.path.basename(args.files[0]))[0]}_toon.jpg"
-    # # uniq = 1
+    result = make_image(result)
+    # # PIL 은 [W,H,C]
+    result = Image.fromarray(result[0])
+    result_bytes = from_image_to_bytes(result)
 
-    # # while os.path.exists(output_path):
-    # #     output_path = f"{out_dir}/{os.path.splitext(os.path.basename(args.files[0]))[0]}_toon({uniq}).jpg"
-    # #     uniq += 1
-    # # result.save(output_path)
-    # return result_bytes
-
-    return latent_real, latent_toon, generator1, generator2, alpha, num_swap, early_alpha
+    return result_bytes

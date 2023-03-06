@@ -125,8 +125,7 @@ class Toonified_Image(Product):
 async def toonification():
     products = []
     min_latent = orders[-1].products[0].weights
-    latent_real, latent_toon, generator1, generator2, alpha, num_swap, early_alpha = make_toonification(min_latent)
-    toonify_result = toonify(latent_real, latent_toon, generator1, generator2, alpha, num_swap, early_alpha)
+    toonify_result = make_toonification(min_latent)
     product = InversionImage(img_result=toonify_result)
     products.append(product)
     new_order = Order(products=products)
