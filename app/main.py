@@ -11,8 +11,6 @@ from typing import List, Union, Optional, Dict, Any
 
 from datetime import datetime
 
-from model import MyEfficientNet, get_model, get_config, predict_from_image_byte
-
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 from ai.SOAT.projector import *
 from ai.SOAT.toonify import *

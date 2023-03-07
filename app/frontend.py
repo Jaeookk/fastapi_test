@@ -8,15 +8,6 @@ from PIL import Image
 
 import streamlit as st
 
-# from confirm_button_hack import cache_on_button_press
-
-# # SETTING PAGE CONFIG TO WIDE MODE
-# ASSETS_DIR_PATH = os.path.join(Path(__file__).parent.parent.parent.parent, "assets")
-
-# st.set_page_config(layout="wide")
-
-# root_password = "password"
-
 
 def main():
     st.title("Inversion Model")
@@ -44,17 +35,4 @@ def main():
         toon_result = Image.open(io.BytesIO(base64.b64decode(toon_result)))
         st.image(toon_result)
 
-
 main()
-# @cache_on_button_press("Authenticate")
-# def authenticate(password) -> bool:
-#     return password == root_password
-
-
-# password = st.text_input("password", type="password")
-
-# if authenticate(password):
-#     st.success("You are authenticated!")
-#     main()
-# else:
-#     st.error("The password is invalid.")
