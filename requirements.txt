@@ -1,4 +1,3 @@
-albumentations==1.3.0
 altair==4.2.2
 anyio==3.6.2
 astor==0.8.1
@@ -22,7 +21,6 @@ cycler==0.11.0
 debugpy @ file:///D:/bld/debugpy_1674522535951/work
 decorator @ file:///home/conda/feedstock_root/build_artifacts/decorator_1641555617451/work
 dlib @ file:///D:/bld/dlib_1670031451462/work
-efficientnet-pytorch==0.7.1
 entrypoints==0.4
 executing @ file:///home/conda/feedstock_root/build_artifacts/executing_1667317341051/work
 face-alignment==1.3.5
