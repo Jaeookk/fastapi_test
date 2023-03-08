@@ -1,0 +1,10 @@
+log/*
+*.pth.tar
+*.mp4
+*.avi
+*.png
+*.jpg
+*.pth
+*.pyc
+*.jpeg
+checkpoints/*
