@@ -3,7 +3,6 @@ anyio==3.6.2
 astor==0.8.1
 asttokens==2.2.1
 attrs==22.2.0
-b==1.0.0
 backcall==0.2.0
 backports.functools-lru-cache==1.6.4
 base58==2.1.1
