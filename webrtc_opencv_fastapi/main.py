@@ -4,6 +4,7 @@ import cv2
 import torch
 import imageio
 import numpy as np
+import time
 from skimage.transform import resize
 from skimage import img_as_ubyte
 from deepfake.demo import load_checkpoints, relative_kp
@@ -42,15 +43,24 @@ class VideoTransformTrack(MediaStreamTrack):
 
     kind = "video"
 
-    def __init__(self, track, transform):
+    def __init__(self, track, transform, *args):
         super().__init__()
         self.track = track
         self.transform = transform
+        if args:
+            self.inpainting = args[0]
+            self.kp_detector = args[1]
+            self.dense_motion_network = args[2]
+            self.avd_network = args[3]
+            self.source = args[4]
+            self.kp_source = args[5]
 
     async def recv(self):
         frame = await self.track.recv()
 
         if self.transform == "cartoon":
+            start = time.time()
+            print("cartoon time check")
             img = frame.to_ndarray(format="bgr24")
 
             # prepare color
@@ -78,6 +88,9 @@ class VideoTransformTrack(MediaStreamTrack):
             new_frame = VideoFrame.from_ndarray(img, format="bgr24")
             new_frame.pts = frame.pts
             new_frame.time_base = frame.time_base
+            print(f"cartoon : {time.time()-start}")
+            print(new_frame.pts)
+            print(new_frame.time_base)
             return new_frame
         elif self.transform == "edges":
             # perform edge detection
@@ -102,6 +115,7 @@ class VideoTransformTrack(MediaStreamTrack):
             new_frame.time_base = frame.time_base
             return new_frame
         elif self.transform == "cv":
+            start = time.time()
             img = frame.to_ndarray(format="bgr24")
             face = faces.detectMultiScale(img, 1.1, 19)
             for (x, y, w, h) in face:
@@ -118,65 +132,86 @@ class VideoTransformTrack(MediaStreamTrack):
             new_frame = VideoFrame.from_ndarray(img, format="bgr24")
             new_frame.pts = frame.pts
             new_frame.time_base = frame.time_base
+            print(f"cv time : {time.time()-start}")
+            print(new_frame.pts)
+            print(new_frame.time_base)
             return new_frame
         elif self.transform == "otalk":
-            img = frame.to_ndarray(format="bgr24")
-            souce_image_path = "./deepfake/assets/result.jpg"
-
-            img_shape = (256, 256)
-
+            print("start")
+            start = time.time()
+            # ----------------------------------------------------------------------------------------------------------------------
             device = torch.device("cuda")
+            img = frame.to_ndarray(format="bgr24")
+            print(f"img load : {time.time()-start}")
 
-            inpainting, kp_detector, dense_motion_network, avd_network = load_checkpoints(
-                config_path="./deepfake/config/vox-256.yaml",
-                checkpoint_path="./deepfake/checkpoints/vox.pth.tar",
-                device=device,
-            )
-
-            source_image = imageio.imread(souce_image_path)
-            source_image = resize(source_image, img_shape)[..., :3]
-            source = torch.tensor(source_image[np.newaxis].astype(np.float32)).permute(0, 3, 1, 2)
-            source = source.to(device)
-
-            kp_source = kp_detector(source)
-
-            kp_driving_initial = None
-
-            with torch.no_grad():
+            with torch.no_grad():  # 시간 측정 해보자 몇초 걸리는지, 그리고 다른 것들과 비교해보자... 뭐가 문제인지 위의 모델 load 문제인지, 아니면 그냥 inference 속도 문제인지
+                tmp = time.time()
                 img = img[200 : 200 + 256, 200 : 200 + 256]
                 img = cv2.flip(img, 1)
+                print(f"img transform : {time.time()-tmp}")
 
+                tmp = time.time()
+                kp_driving_initial = None
                 input_img = (
                     torch.tensor(img[:, :, ::-1].astype(np.float32) / 255.0).permute(2, 0, 1).unsqueeze(0).to(device)
                 )
+                print(f"img to cuda : {time.time()-tmp}")
 
-                kp_driving = kp_detector(input_img)
-
+                tmp = time.time()
+                kp_driving = self.kp_detector(input_img)
                 if kp_driving_initial is None:
                     kp_driving_initial = kp_driving
+                print(f"kp_driving : {time.time()-tmp}")
 
+                tmp = time.time()
                 kp_norm = relative_kp(
-                    kp_source=kp_source,
+                    kp_source=self.kp_source,
                     kp_driving=kp_driving,
                     kp_driving_initial=kp_driving_initial,
                 )
+                print(f"kp_norm : {time.time()-tmp}")
 
-                dense_motion = dense_motion_network(
-                    source_image=source,
+                tmp = time.time()
+                dense_motion = self.dense_motion_network(
+                    source_image=self.source,
                     kp_driving=kp_norm,
-                    kp_source=kp_source,
+                    kp_source=self.kp_source,
                     bg_param=None,
                     dropout_flag=False,
                 )
-                inpaint_result = inpainting(source, dense_motion)
+                print(f"dense_motion : {time.time()-tmp}")
 
-                prediction = np.transpose(inpaint_result["prediction"].data.cpu().numpy(), [0, 2, 3, 1])[0]
+                tmp = time.time()
+                inpaint_result = self.inpainting(self.source, dense_motion)
+                print("finish inference 1 frame")
+                print(f"inpaint_result : {time.time()-tmp}")
+
+                tmp = time.time()
+                prediction = inpaint_result["prediction"]
+                print(f"prediction : {time.time()-tmp}")
+                prediction = prediction.detach()
+                print(f"detach : {time.time()-tmp}")
+                prediction = prediction.cpu()
+                print(f"cpu : {time.time()-tmp}")
+                prediction = prediction.numpy()
+                print(f"numpy : {time.time()-tmp}")
+                prediction = np.transpose(prediction, [0, 2, 3, 1])[0]
+                print(f"np.transpose : {time.time()-tmp}")
                 prediction = img_as_ubyte(prediction)[:, :, ::-1]
+                print(f"img_as_ubyte : {time.time()-tmp}")
+                # prediction = cv2.resize(prediction, dsize=(512, 512))
+                # print(f"prediction : {time.time()-tmp}")
 
-                prediction = cv2.resize(prediction, dsize=(512, 512))
+            tmp = time.time()
             new_frame = VideoFrame.from_ndarray(prediction, format="bgr24")
             new_frame.pts = frame.pts
             new_frame.time_base = frame.time_base
+            print(f"new_frame : {time.time()-tmp}")
+            print(f"otalk : {time.time()-start}")
+            print(new_frame.pts)
+            print(new_frame.time_base)
+            print("*" * 50)
+            return new_frame
         else:
             return frame
 
@@ -277,7 +312,41 @@ async def offer(params: Offer):
         #     pc.addTrack(player.audio)
         #     recorder.addTrack(track)
         if track.kind == "video":
-            pc.addTrack(VideoTransformTrack(relay.subscribe(track), transform=params.video_transform))
+            start = time.time()
+            if params.video_transform == "otalk":
+                souce_image_path = "./deepfake/assets/result.jpg"
+
+                img_shape = (256, 256)
+
+                device = torch.device("cuda")
+
+                inpainting, kp_detector, dense_motion_network, avd_network = load_checkpoints(
+                    config_path="./deepfake/config/vox-256.yaml",
+                    checkpoint_path="./deepfake/checkpoints/vox.pth.tar",
+                    device=device,
+                )
+
+                source_image = imageio.imread(souce_image_path)
+                source_image = resize(source_image, img_shape)[..., :3]
+                source = torch.tensor(source_image[np.newaxis].astype(np.float32)).permute(0, 3, 1, 2)
+                source = source.to(device)
+
+                kp_source = kp_detector(source)
+                pc.addTrack(
+                    VideoTransformTrack(
+                        relay.subscribe(track),
+                        "otalk",
+                        inpainting,
+                        kp_detector,
+                        dense_motion_network,
+                        avd_network,
+                        source,
+                        kp_source,
+                    )
+                )
+                print(f"track : {time.time()-start}")
+            else:
+                pc.addTrack(VideoTransformTrack(relay.subscribe(track), transform=params.video_transform))
             # if args.record_to:
             #     recorder.addTrack(relay.subscribe(track))
 
