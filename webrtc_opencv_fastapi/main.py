@@ -11,7 +11,7 @@ from deepfake.demo import load_checkpoints, relative_kp
 
 from av import VideoFrame
 
-from imageai.Detection import VideoObjectDetection
+# from imageai.Detection import VideoObjectDetection
 
 from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription
 from aiortc.contrib.media import MediaPlayer, MediaRelay, MediaBlackhole

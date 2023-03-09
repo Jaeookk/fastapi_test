@@ -1,6 +1,6 @@
-import matplotlib
+# import matplotlib
 
-matplotlib.use("Agg")
+# matplotlib.use("Agg")
 import sys
 import yaml
 from argparse import ArgumentParser
