@@ -140,7 +140,7 @@ class VideoTransformTrack(MediaStreamTrack):
             print("start")
             start = time.time()
             # ----------------------------------------------------------------------------------------------------------------------
-            device = torch.device("cuda")
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             img = frame.to_ndarray(format="bgr24")
             print(f"img load : {time.time()-start}")
 
@@ -318,7 +318,7 @@ async def offer(params: Offer):
 
                 img_shape = (256, 256)
 
-                device = torch.device("cuda")
+                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
                 inpainting, kp_detector, dense_motion_network, avd_network = load_checkpoints(
                     config_path="./deepfake/config/vox-256.yaml",
